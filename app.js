@@ -1,120 +1,113 @@
-$(document).ready(function () {
-      $('#search-button').click(function () {
-        const title = $('#movie-title').val().trim();
-        if (!title) {
-          alert('Por favor, introduce un título.');
-          return;
-        }
-        buscarTitulo(title);
-      });
-
-      function buscarTitulo(titulo) {
-        $.ajax({
-          url: 'http://www.omdbapi.com/',
-          type: 'GET',
-          dataType: 'json',
-          data: {
-            t: titulo,
-            apikey: '35e7d14d'
-          },
-          success: function (data) {
-            mostrarInfo(data);
-
-            if (data.Type === 'series') {
-              obtenerTemporadas(data.Title, parseInt(data.totalSeasons));
-            }
-          },
-          error: function (xhr, estado, error) {
-            console.error(`Error: ${error} | Estado: ${estado}`);
+      $(document).ready(function () {
+        $("#search-button").click(function () {
+          const movieTitle = $("#movie-title").val().trim();
+          if (!movieTitle) {
+            alert("Por favor, introduce un título.");
+            return;
           }
-        });
-      }
 
-      function mostrarInfo(data) {
-        $('#movie-info').html(`
-          <h2>${data.Title}</h2>
-          <img src="${data.Poster}" alt="Póster">
-          <p><strong>Año:</strong> ${data.Year}</p>
-          <p><strong>Género:</strong> ${data.Genre}</p>
-          <p><strong>Sinopsis:</strong> ${data.Plot}</p>
-          <p><strong>Valoración:</strong> ${data.imdbRating}</p>
-        `);
-      }
-
-      function obtenerTemporadas(titulo, totalSeasons) {
-        const llamadasAjax = [];
-        const ratingsPorTemporada = [];
-        let maxEpisodios = 0;
-
-        for (let i = 1; i <= totalSeasons; i++) {
-          llamadasAjax.push(
-            $.ajax({
-              url: 'http://www.omdbapi.com/',
-              type: 'GET',
-              dataType: 'json',
-              data: {
-                t: titulo,
-                Season: i,
-                apikey: '35e7d14d'
-              },
-              success: function (seasonData) {
-                ratingsPorTemporada[i] = seasonData.Episodes
-                  .map(ep => ep.imdbRating)
-                  .filter(rating => !isNaN(parseFloat(rating))); // Solo notas válidas
-
-                if (seasonData.Episodes.length > maxEpisodios) {
-                  maxEpisodios = seasonData.Episodes.length;
-                }
+          $.ajax({
+            url: "https://www.omdbapi.com/",
+            type: "GET",
+            dataType: "json",
+            data: {
+              t: movieTitle,
+              apikey: "35e7d14d",
+            },
+            success: function (data) {
+              if (data.Response === "False") {
+                $("#movie-info").html("<p>No se encontró la película o serie.</p>");
+                return;
               }
-            })
-          );
-        }
 
-        $.when.apply($, llamadasAjax).then(function () {
-          construirTabla(ratingsPorTemporada, totalSeasons, maxEpisodios);
+              const infoHTML = `
+                <div class="info-container">
+                  <div class="poster">
+                    <img src="${data.Poster}" alt="Poster" />
+                  </div>
+                  <div class="details">
+                    <h2>${data.Title}</h2>
+                    <p><strong>Año:</strong> ${data.Year}</p>
+                    <p><strong>Género:</strong> ${data.Genre}</p>
+                    <p><strong>Sinopsis:</strong> ${data.Plot}</p
+                    <p><strong>Valoración:</strong> ${data.imdbRating}</p>
+                  </div>
+                </div>
+              `;
+              $("#movie-info").html(infoHTML);
+
+              if (data.Type === "series") {
+                const totalSeasons = parseInt(data.totalSeasons);
+                const ajaxCalls = [];
+                const seasonRatings = [];
+                let maxEpisodes = 0;
+
+                for (let i = 1; i <= totalSeasons; i++) {
+                  ajaxCalls.push(
+                    $.ajax({
+                      url: "https://www.omdbapi.com/",
+                      type: "GET",
+                      dataType: "json",
+                      data: {
+                        t: movieTitle,
+                        Season: i,
+                        apikey: "35e7d14d",
+                      },
+                      success: function (seasonData) {
+                        const ratings = seasonData.Episodes
+                          .map((e) => e.imdbRating)
+                          .map((r) => (r === "N/A" ? null : parseFloat(r)));
+
+                        seasonRatings[i] = ratings;
+                        maxEpisodes = Math.max(maxEpisodes, ratings.length);
+                      }
+                    })
+                  );
+                }
+
+                $.when.apply($, ajaxCalls).then(function () {
+                  const table = $("<table>");
+                  const thead = $("<thead><tr><th></th></tr></thead>");
+                  const tbody = $("<tbody>");
+
+                  for (let s = 1; s <= totalSeasons; s++) {
+                    thead.find("tr").append(`<th>T ${s}</th>`);
+                  }
+
+                  for (let ep = 0; ep < maxEpisodes; ep++) {
+                    const row = $("<tr>").append(`<td>${ep + 1}</td>`);
+
+                    for (let s = 1; s <= totalSeasons; s++) {
+                      const rating = seasonRatings[s]?.[ep];
+                      if (rating != null) {
+                        const ratingClass = getRatingClass(rating);
+                        row.append(`<td class="episodio ${ratingClass}">${rating}</td>`);
+                      } else {
+                        row.append("<td></td>");
+                      }
+                    }
+
+                    tbody.append(row);
+                  }
+
+                  table.append(thead).append(tbody);
+                  $("#movie-info").append(table);
+                });
+              }
+            },
+            error: function (xhr, estado, error) {
+              console.warn("Error producido:", error);
+              console.warn("Estado:", estado);
+            },
+          });
         });
-      }
 
-      function construirTabla(ratings, totalSeasons, maxEpisodios) {
-        const tabla = $('<table>');
-        const thead = $('<thead><tr><th></th></tr></thead>');
-        const tbody = $('<tbody>');
-
-        for (let s = 1; s <= totalSeasons; s++) {
-          thead.find('tr').append(`<th>T ${s}</th>`);
+        // Clasifica el color del episodio según nota IMDb
+        function getRatingClass(rating) {
+          if (rating >= 9) return "rating-high";
+          if (rating >= 8) return "rating-good";
+          if (rating >= 7) return "rating-average";
+          if (rating >= 5) return "rating-low";
+          return "rating-bad";
         }
-
-        for (let ep = 0; ep < maxEpisodios; ep++) {
-          let fila = $('<tr>').append(`<td>${ep + 1}</td>`);
-          let tieneRating = false;
-
-          for (let s = 1; s <= totalSeasons; s++) {
-            const rating = ratings[s]?.[ep];
-            if (rating && !isNaN(parseFloat(rating))) {
-              const claseColor = obtenerClasePorRating(rating);
-              fila.append(`<td class="episodio ${claseColor}">${rating}</td>`);
-              tieneRating = true;
-            } else {
-              fila.append('<td></td>');
-            }
-          }
-
-          if (tieneRating) {
-            tbody.append(fila);
-          }
-        }
-
-        tabla.append(thead).append(tbody);
-        $('#movie-info').append(tabla);
-      }
-
-      function obtenerClasePorRating(rating) {
-        const valor = parseFloat(rating);
-        if (valor >= 9) return 'excelente';
-        if (valor >= 8) return 'alta';
-        if (valor >= 7) return 'buena';
-        if (valor >= 5) return 'media';
-        if (valor >= 3) return 'baja';
-        return 'mala';
-      }
-    });
+      });
